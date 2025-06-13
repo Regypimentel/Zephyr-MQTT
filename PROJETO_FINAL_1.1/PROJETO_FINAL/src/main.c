@@ -1,0 +1,263 @@
+#include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/net/wifi.h>
+#include <zephyr/net/wifi_mgmt.h>
+#include <zephyr/net/net_event.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/mqtt.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/pwm.h>
+#include <string.h>
+#include <stdio.h>
+
+LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
+
+#define WIFI_SSID           "Ultra_Anne"
+#define WIFI_PASSWORD       "30280070@"
+#define MQTT_KEEPALIVE      60
+#define MQTT_BROKER_IP      "192.168.1.110"
+#define MQTT_BROKER_PORT    1883
+
+#define PWM_FREQ_HZ 50U
+#define SERVO_MIN_USEC 500U
+#define SERVO_MAX_USEC 2500U
+#define SERVO_NEUTRAL_USEC 1500U
+
+static const struct pwm_dt_spec servo1 = PWM_DT_SPEC_GET(DT_ALIAS(servo1)); // garra
+static const struct pwm_dt_spec servo2 = PWM_DT_SPEC_GET(DT_ALIAS(servo2)); // altura
+static const struct pwm_dt_spec servo3 = PWM_DT_SPEC_GET(DT_ALIAS(servo3)); // ângulo
+static const struct pwm_dt_spec servo4 = PWM_DT_SPEC_GET(DT_ALIAS(servo4)); // base
+
+static struct mqtt_client client;
+static struct sockaddr_storage broker;
+static bool wifi_connected = false;
+static uint8_t rx_buffer[256];
+static uint8_t tx_buffer[256];
+static struct net_mgmt_event_callback wifi_mgmt_cb;
+
+void set_servo_position(const struct pwm_dt_spec *servo, uint32_t pulse_width_usec) {
+    if (!device_is_ready(servo->dev)) {
+        LOG_ERR("PWM device not ready");
+        return;
+    }
+
+    int ret = pwm_set_dt(servo, PWM_USEC(1000000U / PWM_FREQ_HZ), PWM_USEC(pulse_width_usec));
+    if (ret < 0) {
+        LOG_ERR("Failed to set PWM: %d", ret);
+    }
+}
+
+void mqtt_evt_handler(struct mqtt_client *const c, const struct mqtt_evt *evt)
+{
+    switch (evt->type) {
+    case MQTT_EVT_CONNACK:
+        LOG_INF("MQTT client connected!");
+
+        struct mqtt_topic subscribe_topic = {
+            .topic = {
+                .utf8 = "controle/comandos",
+                .size = strlen("controle/comandos")
+            },
+            .qos = MQTT_QOS_1_AT_LEAST_ONCE
+        };
+
+        struct mqtt_subscription_list sub_list = {
+            .list = &subscribe_topic,
+            .list_count = 1,
+            .message_id = 1
+        };
+
+        int sub_rc = mqtt_subscribe(&client, &sub_list);
+        if (sub_rc != 0) {
+            LOG_ERR("Failed to subscribe: %d", sub_rc);
+        } else {
+            LOG_INF("Subscribed to topic: %s", subscribe_topic.topic.utf8);
+        }
+
+        const char *topic = "meutopico/status";
+        const char *payload = "Teste de mensagem";
+
+        struct mqtt_publish_param pub_param = {
+            .message.topic.qos = MQTT_QOS_1_AT_LEAST_ONCE,
+            .message.topic.topic.utf8 = (char *)topic,
+            .message.topic.topic.size = strlen(topic),
+            .message.payload.data = (uint8_t *)payload,
+            .message.payload.len = strlen(payload),
+            .message_id = 1,
+            .dup_flag = 0,
+            .retain_flag = 0
+        };
+
+        int pub_rc = mqtt_publish(&client, &pub_param);
+        if (pub_rc != 0) {
+            LOG_ERR("Failed to publish message: %d", pub_rc);
+        } else {
+            LOG_INF("Message published to topic: %s", topic);
+        }
+
+        break;
+
+    case MQTT_EVT_DISCONNECT:
+        LOG_INF("MQTT client disconnected, retrying in 5s");
+        mqtt_disconnect(&client, false);
+        k_sleep(K_SECONDS(5));
+        break;
+
+    case MQTT_EVT_PUBLISH: {
+        const struct mqtt_publish_param *p = &evt->param.publish;
+        uint8_t payload_buf[256];
+
+        int len = mqtt_read_publish_payload(c, payload_buf, sizeof(payload_buf));
+        if (len > 0) {
+            payload_buf[len] = '\0';
+
+            char *color_ptr = strstr((char *)payload_buf, "Botão ");
+            if (color_ptr) {
+                color_ptr += strlen("Botão ");
+                char *space_ptr = strchr(color_ptr, ' ');
+                if (space_ptr) {
+                    *space_ptr = '\0';
+                }
+                LOG_INF("Comando recebido: %s", color_ptr);
+
+                if (strcmp(color_ptr, "vermelho") == 0) {
+                    set_servo_position(&servo2, 2000); // desce
+                    k_sleep(K_MSEC(600));
+                    set_servo_position(&servo1, 2500); // abre garra
+                    k_sleep(K_MSEC(400));
+                    set_servo_position(&servo1, 500);  // fecha garra
+                    k_sleep(K_MSEC(400));
+                    set_servo_position(&servo2, 1000); // sobe
+                } else if (strcmp(color_ptr, "amarelo") == 0) {
+                    set_servo_position(&servo4, 2500); // esquerda
+                } else if (strcmp(color_ptr, "azul") == 0) {
+                    set_servo_position(&servo4, 500);  // direita
+                } else if (strcmp(color_ptr, "verde") == 0) {
+                    set_servo_position(&servo1, SERVO_NEUTRAL_USEC);
+                    set_servo_position(&servo2, SERVO_NEUTRAL_USEC);
+                    set_servo_position(&servo3, SERVO_NEUTRAL_USEC);
+                    set_servo_position(&servo4, SERVO_NEUTRAL_USEC);
+                }
+            } else {
+                LOG_INF("Mensagem não reconhecida");
+            }
+
+            if (p->message.topic.qos == MQTT_QOS_1_AT_LEAST_ONCE) {
+                struct mqtt_puback_param ack = {
+                    .message_id = evt->param.publish.message_id
+                };
+                mqtt_publish_qos1_ack(c, &ack);
+            }
+        } else {
+            LOG_WRN("Received empty payload or failed to read payload");
+        }
+        break;
+    }
+
+    default:
+        break;
+    }
+}
+
+void mqtt_init_and_connect(void)
+{
+    struct mqtt_utf8 broker_host = {
+        .utf8 = MQTT_BROKER_IP,
+        .size = strlen(MQTT_BROKER_IP),
+    };
+
+    struct sockaddr_in *broker4 = (struct sockaddr_in *)&broker;
+    broker4->sin_family = AF_INET;
+    broker4->sin_port = htons(MQTT_BROKER_PORT);
+    net_addr_pton(AF_INET, broker_host.utf8, &broker4->sin_addr);
+
+    mqtt_client_init(&client);
+    client.broker = &broker;
+    client.client_id.utf8 = "zephyr_client";
+    client.client_id.size = strlen(client.client_id.utf8);
+    client.protocol_version = MQTT_VERSION_3_1_1;
+    client.transport.type = MQTT_TRANSPORT_NON_SECURE;
+    client.keepalive = MQTT_KEEPALIVE;
+    client.rx_buf = rx_buffer;
+    client.rx_buf_size = sizeof(rx_buffer);
+    client.tx_buf = tx_buffer;
+    client.tx_buf_size = sizeof(tx_buffer);
+    client.evt_cb = mqtt_evt_handler;
+
+    int rc = mqtt_connect(&client);
+    if (rc != 0) {
+        LOG_ERR("Failed to connect to broker: %d", rc);
+    }
+}
+
+static void wifi_mgmt_event_handler(struct net_mgmt_event_callback *cb, uint32_t mgmt_event, struct net_if *iface)
+{
+    const struct wifi_status *status = cb->info;
+
+    switch (mgmt_event) {
+    case NET_EVENT_WIFI_CONNECT_RESULT:
+        if (status->status) {
+            LOG_ERR("Connection failed: %d", status->status);
+        } else {
+            LOG_INF("Successfully connected to WiFi!");
+            wifi_connected = true;
+            mqtt_init_and_connect();
+        }
+        break;
+
+    case NET_EVENT_WIFI_DISCONNECT_RESULT:
+        if (status->status) {
+            LOG_ERR("Disconnection failed: %d", status->status);
+        } else {
+            LOG_INF("Successfully disconnected from WiFi");
+            wifi_connected = false;
+        }
+        break;
+
+    default:
+        LOG_INF("Unhandled event: 0x%08X", mgmt_event);
+        break;
+    }
+}
+
+int main(void)
+{
+    struct net_if *iface = net_if_get_default();
+    if (!iface) {
+        LOG_ERR("No network interface available");
+        return 0;
+    }
+
+    struct wifi_connect_req_params cnx_params = {
+        .ssid = WIFI_SSID,
+        .ssid_length = strlen(WIFI_SSID),
+        .psk = WIFI_PASSWORD,
+        .psk_length = strlen(WIFI_PASSWORD),
+        .channel = WIFI_CHANNEL_ANY,
+        .security = WIFI_SECURITY_TYPE_PSK,
+    };
+
+    net_mgmt_init_event_callback(&wifi_mgmt_cb,
+                                 wifi_mgmt_event_handler,
+                                 NET_EVENT_WIFI_CONNECT_RESULT |
+                                 NET_EVENT_WIFI_DISCONNECT_RESULT);
+    net_mgmt_add_event_callback(&wifi_mgmt_cb);
+
+    int ret = net_mgmt(NET_REQUEST_WIFI_CONNECT, iface,
+                       &cnx_params, sizeof(cnx_params));
+    if (ret) {
+        LOG_ERR("Connection request failed: %d", ret);
+    } else {
+        LOG_INF("Connection requested");
+    }
+
+    while (1) {
+        if (wifi_connected) {
+            mqtt_input(&client);
+            mqtt_live(&client);
+        }
+        k_sleep(K_MSEC(1000));
+    }
+}

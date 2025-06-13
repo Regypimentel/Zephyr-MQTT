@@ -1,0 +1,4 @@
+west:
+  command: /home/tesseract-0877/zephyrproject/.venv/bin/west build -p -b esp_wrover_kit/esp32/procpu
+  topdir: /home/tesseract-0877/zephyrproject
+  version: 1.4.0
