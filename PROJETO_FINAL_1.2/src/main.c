@@ -13,8 +13,8 @@
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 
-#define WIFI_SSID           "Ultra_Anne"
-#define WIFI_PASSWORD       "30280070@"
+#define WIFI_SSID           "WIFI"
+#define WIFI_PASSWORD       "SENHA"
 #define MQTT_KEEPALIVE      60
 #define MQTT_BROKER_IP      "192.168.1.108"
 #define MQTT_BROKER_PORT    1883
