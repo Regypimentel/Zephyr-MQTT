@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Controle do Braço Robótico</title>
+  <style>
+    /* Estilos gerais */
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #111;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      padding: 0;
+    }
+
+    h1 {
+      margin-bottom: 20px;
+      font-size: 1.8rem;
+      text-align: center;
+    }
+
+    /* Container dos botões */
+    .button-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* Botões da parte superior */
+    .top-buttons, .bottom-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 15px;
+      margin: 10px;
+    }
+
+    .top-buttons button,
+    .bottom-buttons button {
+      width: 90px;
+      height: 50px;
+      font-size: 14px;
+      font-weight: bold;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      color: white;
+      transition: background-color 0.3s;
+    }
+
+    .top-buttons button {
+      background-color: blue;
+    }
+
+    .bottom-buttons button {
+      background-color: yellow;
+      color: black;
+    }
+
+    /* Botão GET */
+    #getButton {
+      background-color: red;
+      color: white;
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      font-size: 18px;
+      font-weight: bold;
+      border: none;
+      cursor: pointer;
+      margin: 10px 0;
+    }
+
+    /* Estilos para tornar a página responsiva */
+    @media (max-width: 600px) {
+      h1 {
+        font-size: 1.5rem;
+      }
+
+      .top-buttons button,
+      .bottom-buttons button {
+        width: 80px;
+        height: 40px;
+        font-size: 12px;
+      }
+
+      #getButton {
+        width: 80px;
+        height: 80px;
+        font-size: 16px;
+      }
+    }
+
+    @media (max-width: 400px) {
+      .top-buttons button,
+      .bottom-buttons button {
+        width: 70px;
+        height: 35px;
+        font-size: 12px;
+      }
+
+      #getButton {
+        width: 70px;
+        height: 70px;
+        font-size: 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>Controle do Braço</h1>
+
+  <div class="button-container">
+    <div class="top-buttons">
+      <button onclick="sendMQTT('ON')">ON</button>
+      <button onclick="sendMQTT('OFF')">OFF</button>
+    </div>
+
+    <button id="getButton" onclick="getObject()">GET</button>
+
+    <div class="bottom-buttons">
+      <button onclick="sendDestination('1')">1</button>
+      <button onclick="sendDestination('2')">2</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/mqtt/dist/mqtt.min.js"></script>
+  <script>
+    const brokerUrl = 'ws://192.168.45.197:9001';  // URL do broker MQTT
+    const topic = 'meutopico/comandos';  // Tópico para enviar comandos
+    const statusTopic = 'status/led';  // Status do LED ou da operação
+
+    const client = mqtt.connect(brokerUrl);
+    let armModeOn = false;  // Variável para saber se o braço está no modo ON
+    let itemGrabbed = false;  // Variável para saber se o item foi pego
+
+    client.on('connect', () => {
+      console.log('Conectado ao broker MQTT');
+      client.subscribe(topic);  // Subscribing to the topic
+      client.subscribe(statusTopic);
+    });
+
+    client.on('message', (t, msg) => {
+      const payload = msg.toString();
+      console.log(`Mensagem recebida (${t}): ${payload}`);
+
+      if (t === statusTopic) {
+        if (payload === 'LED_ON') {
+          // Implementação para quando o braço robótico estiver ativo
+        } else if (payload === 'LED_OFF') {
+          // Implementação para quando o braço robótico estiver desligado
+        }
+      }
+    });
+
+    function sendMQTT(message) {
+      client.publish(topic, message);  // Enviar o comando via MQTT
+      console.log(`Comando enviado: ${message}`);
+
+      if (message === 'ON') {
+        armModeOn = true; // Atualiza o estado para "ON"
+        console.log("Braço no modo ON");
+      } else if (message === 'OFF') {
+        armModeOn = false; // Atualiza o estado para "OFF"
+        console.log("Braço no modo OFF");
+      }
+    }
+
+    function getObject() {
+      if (armModeOn) {
+        // Enviar comando "GET" para pegar o objeto
+        sendMQTT("GET");
+
+        // Simulando a ação de pegar o objeto
+        setTimeout(() => {
+          itemGrabbed = true;  // O item foi pego
+          console.log("Objeto pego!");
+
+        }, 2000);  // Aguarda 2 segundos para simular a ação de pegar o objeto
+      } else {
+        alert("O braço não está no modo ON. Por favor, ligue o braço com o botão ON.");
+      }
+    }
+
+    function sendDestination(destination) {
+      if (itemGrabbed) {
+        // Envia comando para deixar o objeto no destino escolhido
+        sendMQTT(destination);
+        console.log(`Comando enviado para o destino ${destination}`);
+
+        itemGrabbed = false;  // Reset após deixar o objeto
+      } else {
+        console.log("Nenhum item foi pego ainda!");
+        alert("Primeiro, pegue o objeto com o botão 'GET'!");
+      }
+    }
+  </script>
+</body>
+</html>
