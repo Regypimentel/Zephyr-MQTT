@@ -11,10 +11,10 @@
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 
-#define WIFI_SSID           "S21 FE de Mariana"
-#define WIFI_PASSWORD       "pevo1234"
+#define WIFI_SSID           "LSE"
+#define WIFI_PASSWORD       "HubLS3s2"
 #define MQTT_KEEPALIVE      60
-#define MQTT_BROKER_IP      "192.168.45.197"
+#define MQTT_BROKER_IP      "192.168.0.197"
 #define MQTT_BROKER_PORT    1883
 
 #define PWM_PERIOD          PWM_USEC(20000)
@@ -45,6 +45,9 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 #define SERVO3_TWO_US       PWM_USEC(1700)
 #define SERVO4_TWO_US       PWM_USEC(2100)
 
+#define SERVO1 DT_ALIAS(servo1)
+static const struct pwm_dt_spec servo1 = PWM_DT_SPEC_GET(SERVO1);
+
 static struct mqtt_client client;
 static struct sockaddr_storage broker;
 static bool wifi_connected = false;
@@ -52,14 +55,10 @@ static uint8_t rx_buffer[256];
 static uint8_t tx_buffer[256];
 static struct net_mgmt_event_callback wifi_mgmt_cb;
 
-// PWM configuration for the servos
-static const struct pwm_dt_spec servo1 = PWM_DT_SPEC_GET(DT_ALIAS(servo1));
-static const struct pwm_dt_spec servo2 = PWM_DT_SPEC_GET(DT_ALIAS(servo2));
-static const struct pwm_dt_spec servo3 = PWM_DT_SPEC_GET(DT_ALIAS(servo3));
-static const struct pwm_dt_spec servo4 = PWM_DT_SPEC_GET(DT_ALIAS(servo4));
 
-static bool arm_mode_on = false; // Controla se o braço está em modo ON ou OFF
-static bool item_grabbed = false; // Controla se o item foi pego
+
+static bool arm_mode_on = false; 
+static bool item_grabbed = false; 
 
 void move_servo_smoothly(const struct pwm_dt_spec *servo, uint32_t from_us, uint32_t to_us, int steps, int delay_ms) {
     if (from_us == to_us) return;
@@ -113,24 +112,15 @@ void mqtt_evt_handler(struct mqtt_client *const c, const struct mqtt_evt *evt) {
                 LOG_INF("Comando ON recebido");
                 arm_mode_on = true;
                 pwm_set_pulse_dt(&servo1, SERVO1_OPEN_US);
-                pwm_set_pulse_dt(&servo2, SERVO2_ON_US);
-                pwm_set_pulse_dt(&servo3, SERVO3_ON_US);
-                pwm_set_pulse_dt(&servo4, SERVO4_ON_US);
                 item_grabbed = false;
             }
             else if (strcmp(payload_buf, "OFF") == 0) {
                 LOG_INF("Comando OFF recebido");
                 arm_mode_on = false;
                 pwm_set_pulse_dt(&servo1, SERVO1_CLOSE_US);
-                pwm_set_pulse_dt(&servo2, SERVO2_OFF_US);
-                pwm_set_pulse_dt(&servo3, SERVO3_OFF_US);
-                pwm_set_pulse_dt(&servo4, SERVO4_OFF_US);
             }
             else if (strcmp(payload_buf, "GET") == 0 && arm_mode_on) {
                 LOG_INF("Comando GET recebido - Pegando objeto");
-                pwm_set_pulse_dt(&servo4, SERVO4_ON_US);
-		pwm_set_pulse_dt(&servo2, SERVO3_GET_US);
-                pwm_set_pulse_dt(&servo3, SERVO2_GET_US);
 		k_sleep(K_SECONDS(2));
 
 
@@ -139,40 +129,24 @@ void mqtt_evt_handler(struct mqtt_client *const c, const struct mqtt_evt *evt) {
                 k_sleep(K_SECONDS(1));
                 item_grabbed = true;
 
-                pwm_set_pulse_dt(&servo2, SERVO2_ON_US);
-                pwm_set_pulse_dt(&servo3, SERVO3_ON_US);
             }
             else if (strcmp(payload_buf, "1") == 0 && arm_mode_on && item_grabbed) {
                 LOG_INF("Comando 1 recebido - Deixando objeto no destino 1");
-                pwm_set_pulse_dt(&servo2, SERVO2_ONE_US);
-                pwm_set_pulse_dt(&servo3, SERVO3_ONE_US);
-                pwm_set_pulse_dt(&servo4, SERVO4_ONE_US);
 
 		k_sleep(K_SECONDS(5));
 		pwm_set_pulse_dt(&servo1, SERVO1_OPEN_US);
 		k_sleep(K_SECONDS(3));
-		pwm_set_pulse_dt(&servo4, SERVO4_ON_US);
-		pwm_set_pulse_dt(&servo2, SERVO2_ON_US);
-		pwm_set_pulse_dt(&servo3, SERVO3_ON_US);
 
 
                 item_grabbed = false;
             }
             else if (strcmp(payload_buf, "2") == 0 && arm_mode_on && item_grabbed) {
                 LOG_INF("Comando 2 recebido - Deixando objeto no destino 2");
-                pwm_set_pulse_dt(&servo2, SERVO2_TWO_US);
-                pwm_set_pulse_dt(&servo3, SERVO3_TWO_US);
-                pwm_set_pulse_dt(&servo4, SERVO4_TWO_US);
 
 		k_sleep(K_SECONDS(5));
 		pwm_set_pulse_dt(&servo1, SERVO1_OPEN_US);
 
 		k_sleep(K_SECONDS(3));
-		pwm_set_pulse_dt(&servo4, SERVO4_ON_US);
-		pwm_set_pulse_dt(&servo2, SERVO2_ON_US);
-		pwm_set_pulse_dt(&servo3, SERVO3_ON_US);
-
-
 
                 item_grabbed = false;
             } else {
@@ -222,17 +196,20 @@ void mqtt_init_and_connect(void) {
 }
 
 static void wifi_mgmt_event_handler(struct net_mgmt_event_callback *cb, uint32_t mgmt_event, struct net_if *iface) {
+
     const struct wifi_status *status = cb->info;
 
     switch (mgmt_event) {
     case NET_EVENT_WIFI_CONNECT_RESULT:
         if (!status->status) {
             wifi_connected = true;
+            LOG_INF("Wi-Fi connected successfully to SSID: %s", WIFI_SSID);
             mqtt_init_and_connect();
         }
         break;
     case NET_EVENT_WIFI_DISCONNECT_RESULT:
         wifi_connected = false;
+        LOG_INF("Wi-Fi disconnected, status: %d", status->status);
         break;
     default:
         break;
@@ -240,40 +217,41 @@ static void wifi_mgmt_event_handler(struct net_mgmt_event_callback *cb, uint32_t
 }
 
 int main(void) {
-    if (!device_is_ready(servo1.dev) || !device_is_ready(servo2.dev) || !device_is_ready(servo3.dev) || !device_is_ready(servo4.dev)) {
+
+    LOG_INF("Starting Zephyr MQTT Client with Wi-Fi");
+
+    if (!device_is_ready(servo1.dev)) {
         LOG_ERR("Failed to initialize PWM devices.");
         return 0;
     }
+    LOG_INF("PWM devices initialized successfully.");
 
-    pwm_set_pulse_dt(&servo1, SERVO1_CLOSE_US); // Inicializa no modo OFF
-    pwm_set_pulse_dt(&servo2, SERVO2_OFF_US);
-    pwm_set_pulse_dt(&servo3, SERVO3_OFF_US);
-    pwm_set_pulse_dt(&servo4, SERVO4_OFF_US); // Começa em posição de descanso
+    pwm_set_pulse_dt(&servo1, SERVO1_CLOSE_US);  
 
     struct net_if *iface = net_if_get_default();
     struct wifi_connect_req_params cnx_params = {
         .ssid = WIFI_SSID,
-        .ssid_length = strlen(WIFI_SSID),
+        .ssid_length = sizeof(WIFI_SSID),
         .psk = WIFI_PASSWORD,
-        .psk_length = strlen(WIFI_PASSWORD),
+        .psk_length = sizeof(WIFI_PASSWORD),
         .channel = WIFI_CHANNEL_ANY,
         .security = WIFI_SECURITY_TYPE_PSK,
     };
 
-    net_mgmt_init_event_callback(&wifi_mgmt_cb,
-                                 wifi_mgmt_event_handler,
-                                 NET_EVENT_WIFI_CONNECT_RESULT |
-                                 NET_EVENT_WIFI_DISCONNECT_RESULT);
+    LOG_INF("Connecting to Wi-Fi SSID: %s", WIFI_SSID);
+
+    net_mgmt_init_event_callback(&wifi_mgmt_cb, wifi_mgmt_event_handler, NET_EVENT_WIFI_CONNECT_RESULT | NET_EVENT_WIFI_DISCONNECT_RESULT);
     net_mgmt_add_event_callback(&wifi_mgmt_cb);
 
-    net_mgmt(NET_REQUEST_WIFI_CONNECT, iface,
-             &cnx_params, sizeof(cnx_params));
+    net_mgmt(NET_REQUEST_WIFI_CONNECT, iface, &cnx_params, sizeof(cnx_params));
 
     while (1) {
         if (wifi_connected) {
             mqtt_input(&client);
             mqtt_live(&client);
+            LOG_INF("Wi-fi Connected");
         }
+        LOG_INF("Waiting for events...");
         k_sleep(K_MSEC(1000));
     }
 }

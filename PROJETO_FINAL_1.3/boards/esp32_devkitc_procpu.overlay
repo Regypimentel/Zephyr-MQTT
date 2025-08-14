@@ -1,0 +1,45 @@
+#include <zephyr/dt-bindings/pwm/pwm.h>
+
+/ {
+    aliases {
+        servo1 = &pwm_led_0;
+    };
+
+	pwmleds {
+		compatible = "pwm-leds";
+		pwm_led_0: pwm_led_0 {
+			pwms = <&ledc0 0 PWM_HZ(50) PWM_POLARITY_NORMAL>;
+		};
+	};
+	
+};
+
+&pinctrl {
+	ledc0_default: ledc0_default {
+		group1 {
+			pinmux = <LEDC_CH0_GPIO12>;
+			output-enable;
+		};
+	};
+
+};
+
+&ledc0 {
+	pinctrl-0 = <&ledc0_default>;
+	pinctrl-names = "default";
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+	channel0@0 {
+		reg = <0x0>;
+		timer = <0>;
+	};
+};
+
+&timer0 {
+	status = "okay";
+};
+
+&wifi {
+	status = "okay";
+};
