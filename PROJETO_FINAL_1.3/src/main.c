@@ -8,42 +8,10 @@
 #include <zephyr/drivers/pwm.h>
 #include <string.h>
 #include <stdio.h>
+#include "driver.h"
+#include "defines.h"
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
-
-#define WIFI_SSID           "LSE"
-#define WIFI_PASSWORD       "HubLS3s2"
-#define MQTT_KEEPALIVE      60
-#define MQTT_BROKER_IP      "192.168.0.197"
-#define MQTT_BROKER_PORT    1883
-
-#define PWM_PERIOD          PWM_USEC(20000)
-#define SERVO1_OPEN_US      PWM_USEC(1555)
-#define SERVO1_CLOSE_US     PWM_USEC(2000)
-
-// ON
-#define SERVO2_ON_US        PWM_USEC(1400)
-#define SERVO3_ON_US        PWM_USEC(2000)
-#define SERVO4_ON_US        PWM_USEC(2500)
-
-// OFF
-#define SERVO2_OFF_US       PWM_USEC(1000)
-#define SERVO3_OFF_US       PWM_USEC(1000)
-#define SERVO4_OFF_US       PWM_USEC(500)
-
-// GET
-#define SERVO2_GET_US       PWM_USEC(2000)
-#define SERVO3_GET_US       PWM_USEC(2000)
-
-// 1
-#define SERVO2_ONE_US       PWM_USEC(1600)
-#define SERVO3_ONE_US       PWM_USEC(1600)
-#define SERVO4_ONE_US       PWM_USEC(1900)
-
-// 2
-#define SERVO2_TWO_US       PWM_USEC(1800)
-#define SERVO3_TWO_US       PWM_USEC(1700)
-#define SERVO4_TWO_US       PWM_USEC(2100)
 
 #define SERVO1 DT_ALIAS(servo1)
 static const struct pwm_dt_spec servo1 = PWM_DT_SPEC_GET(SERVO1);
@@ -54,13 +22,10 @@ static bool wifi_connected = false;
 static uint8_t rx_buffer[256];
 static uint8_t tx_buffer[256];
 static struct net_mgmt_event_callback wifi_mgmt_cb;
-
-
-
 static bool arm_mode_on = false; 
 static bool item_grabbed = false; 
 
-void move_servo_smoothly(const struct pwm_dt_spec *servo, uint32_t from_us, uint32_t to_us, int steps, int delay_ms) {
+void move_servo_smoothly(const struct pwm_dt_spec *servo, uint64_t from_us, uint64_t to_us, int steps, int delay_ms) {
     if (from_us == to_us) return;
     int32_t delta = (int32_t)(to_us - from_us);
     int32_t step_size = delta / steps;
@@ -69,34 +34,24 @@ void move_servo_smoothly(const struct pwm_dt_spec *servo, uint32_t from_us, uint
     for (int i = 0; i < steps; i++) {
         pwm_set_pulse_dt(servo, current);
         current += step_size;
-        k_sleep(K_MSEC(delay_ms));
+        k_msleep(delay_ms);
     }
     pwm_set_pulse_dt(servo, to_us);
 }
 
 void mqtt_evt_handler(struct mqtt_client *const c, const struct mqtt_evt *evt) {
+
     switch (evt->type) {
     case MQTT_EVT_CONNACK:
-        LOG_INF("MQTT client connected!");
-        struct mqtt_topic subscribe_topic = {
-            .topic = {
-                .utf8 = "meutopico/comandos",
-                .size = strlen("meutopico/comandos")
-            },
-            .qos = MQTT_QOS_1_AT_LEAST_ONCE
-        };
-        struct mqtt_subscription_list sub_list = {
-            .list = &subscribe_topic,
-            .list_count = 1,
-            .message_id = 1
-        };
+        LOG_INF("Cliente MQTT conectado!");
         mqtt_subscribe(&client, &sub_list);
         break;
 
     case MQTT_EVT_DISCONNECT:
         LOG_INF("MQTT client disconnected, retrying in 5s");
         mqtt_disconnect(&client, false);
-        k_sleep(K_SECONDS(5));
+        k_msleep(5000);
+        mqtt_init_and_connect();
         break;
 
     case MQTT_EVT_PUBLISH: {
@@ -109,46 +64,24 @@ void mqtt_evt_handler(struct mqtt_client *const c, const struct mqtt_evt *evt) {
             LOG_INF("Mensagem recebida: %s", payload_buf);
 
             if (strcmp(payload_buf, "ON") == 0) {
-                LOG_INF("Comando ON recebido");
+                LOG_INF("Comando ON recebido(Abrindo comedor)");
                 arm_mode_on = true;
                 pwm_set_pulse_dt(&servo1, SERVO1_OPEN_US);
                 item_grabbed = false;
             }
             else if (strcmp(payload_buf, "OFF") == 0) {
-                LOG_INF("Comando OFF recebido");
+                LOG_INF("Comando OFF recebido(Fechando comedor)");
                 arm_mode_on = false;
                 pwm_set_pulse_dt(&servo1, SERVO1_CLOSE_US);
             }
             else if (strcmp(payload_buf, "GET") == 0 && arm_mode_on) {
                 LOG_INF("Comando GET recebido - Pegando objeto");
-		k_sleep(K_SECONDS(2));
-
-
+		        k_msleep(2000);
                 pwm_set_pulse_dt(&servo1, SERVO1_CLOSE_US);
 
-                k_sleep(K_SECONDS(1));
+                k_msleep(1000);
                 item_grabbed = true;
 
-            }
-            else if (strcmp(payload_buf, "1") == 0 && arm_mode_on && item_grabbed) {
-                LOG_INF("Comando 1 recebido - Deixando objeto no destino 1");
-
-		k_sleep(K_SECONDS(5));
-		pwm_set_pulse_dt(&servo1, SERVO1_OPEN_US);
-		k_sleep(K_SECONDS(3));
-
-
-                item_grabbed = false;
-            }
-            else if (strcmp(payload_buf, "2") == 0 && arm_mode_on && item_grabbed) {
-                LOG_INF("Comando 2 recebido - Deixando objeto no destino 2");
-
-		k_sleep(K_SECONDS(5));
-		pwm_set_pulse_dt(&servo1, SERVO1_OPEN_US);
-
-		k_sleep(K_SECONDS(3));
-
-                item_grabbed = false;
             } else {
                 LOG_WRN("Comando desconhecido: %s", payload_buf);
             }
@@ -169,33 +102,57 @@ void mqtt_evt_handler(struct mqtt_client *const c, const struct mqtt_evt *evt) {
 }
 
 void mqtt_init_and_connect(void) {
-    struct mqtt_utf8 broker_host = {
-        .utf8 = MQTT_BROKER_IP,
-        .size = strlen(MQTT_BROKER_IP),
+    
+    int err;
+    struct zsock_addrinfo hints = {
+        .ai_family = AF_INET,
+        .ai_socktype = SOCK_STREAM
     };
+    struct zsock_addrinfo *res;
 
+    err = zsock_getaddrinfo(MQTT_BROKER_IP, NULL, &hints, &res);
+    if (err != 0 || res == NULL) {
+        LOG_ERR("Failed to resolve broker address: %d", err);
+        freeaddrinfo(res);
+        return;
+    }
+
+    struct sockaddr_in *addr4 = (struct sockaddr_in *)res->ai_addr;
     struct sockaddr_in *broker4 = (struct sockaddr_in *)&broker;
     broker4->sin_family = AF_INET;
     broker4->sin_port = htons(MQTT_BROKER_PORT);
-    net_addr_pton(AF_INET, broker_host.utf8, &broker4->sin_addr);
+    broker4->sin_addr = addr4->sin_addr;
 
+    char ipstr[NET_IPV4_ADDR_LEN];
+    inet_ntop(AF_INET, &addr4->sin_addr, ipstr, sizeof(ipstr));
+    LOG_INF("Conectando em %s (%s):%d", MQTT_BROKER_IP, ipstr, MQTT_BROKER_PORT);
+    
+    freeaddrinfo(res);
+    
     mqtt_client_init(&client);
     client.broker = &broker;
-    client.client_id.utf8 = "zephyr_client";
-    client.client_id.size = strlen(client.client_id.utf8);
-    client.protocol_version = MQTT_VERSION_3_1_1;
+    client.protocol_version = MQTT_VERSION_3_1_0;
     client.transport.type = MQTT_TRANSPORT_NON_SECURE;
     client.keepalive = MQTT_KEEPALIVE;
+    client.client_id.utf8 = "zephyr_client";
+    client.client_id.size = strlen("zephyr_client");
     client.rx_buf = rx_buffer;
     client.rx_buf_size = sizeof(rx_buffer);
     client.tx_buf = tx_buffer;
     client.tx_buf_size = sizeof(tx_buffer);
     client.evt_cb = mqtt_evt_handler;
-
-    mqtt_connect(&client);
+   
+    err = mqtt_connect(&client);
+    if (err != 0)
+    {
+        LOG_ERR("Erro na conexão com o mqqt_connect: %d", err);
+        return;
+    }
+    
+    LOG_INF("MQTT_connect() OK, aguardando CONNACK…");
 }
 
-static void wifi_mgmt_event_handler(struct net_mgmt_event_callback *cb, uint32_t mgmt_event, struct net_if *iface) {
+static void wifi_mgmt_event_handler(struct net_mgmt_event_callback *cb, uint64_t mgmt_event, struct net_if *iface) {
 
     const struct wifi_status *status = cb->info;
 
@@ -206,13 +163,14 @@ static void wifi_mgmt_event_handler(struct net_mgmt_event_callback *cb, uint32_t
             LOG_INF("Wi-Fi connected successfully to SSID: %s", WIFI_SSID);
             mqtt_init_and_connect();
         }
-        break;
+    break;
     case NET_EVENT_WIFI_DISCONNECT_RESULT:
         wifi_connected = false;
         LOG_INF("Wi-Fi disconnected, status: %d", status->status);
-        break;
+    break;
     default:
-        break;
+        LOG_WRN("Wi-Fi evento desconhecido: %d", status->status);
+    break;
     }
 }
 
@@ -249,9 +207,9 @@ int main(void) {
         if (wifi_connected) {
             mqtt_input(&client);
             mqtt_live(&client);
-            LOG_INF("Wi-fi Connected");
+            LOG_DBG("Waiting for events...");
         }
-        LOG_INF("Waiting for events...");
-        k_sleep(K_MSEC(1000));
+        k_msleep(1000);
+        mqtt_publish(&client, &pub_param);
     }
 }
