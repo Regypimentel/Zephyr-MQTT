@@ -38,6 +38,9 @@ const struct mqtt_publish_param pub_param = {
             .len = strlen(MQTT_USER_CONECTED)
         }
     },
+    .message_id = 1,
+    .dup_flag = 0,
+    .retain_flag = 0
 };
 
 const struct mqtt_publish_param publish_open = {
@@ -48,6 +51,22 @@ const struct mqtt_publish_param publish_open = {
             .len = strlen(MQTT_USER_COMEDOR_ON)
         }
     },
+    .message_id = 1,
+    .dup_flag = 0,
+    .retain_flag = 0    
+};
+
+const struct mqtt_publish_param publish_off = {
+    .message = {
+        .topic = publish_topic,
+        .payload = {
+            .data = (uint8_t *)MQTT_USER_COMEDOR_OFF,
+            .len = strlen(MQTT_USER_COMEDOR_OFF)
+        }
+    },
+    .message_id = 1,
+    .dup_flag = 0,
+    .retain_flag = 0    
 };
 
 void mqtt_init_and_connect(void);

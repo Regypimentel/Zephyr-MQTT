@@ -18,14 +18,4 @@
 #define SERVO1_OPEN_US      PWM_USEC(1555)
 #define SERVO1_CLOSE_US     PWM_USEC(2000)
 
-// ON
-#define SERVO2_ON_US        PWM_USEC(1400)
-#define SERVO3_ON_US        PWM_USEC(2000)
-#define SERVO4_ON_US        PWM_USEC(2500)
-
-// OFF
-#define SERVO2_OFF_US       PWM_USEC(1000)
-#define SERVO3_OFF_US       PWM_USEC(1000)
-#define SERVO4_OFF_US       PWM_USEC(500)
-
 

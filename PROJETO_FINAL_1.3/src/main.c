@@ -45,6 +45,7 @@ void mqtt_evt_handler(struct mqtt_client *const c, const struct mqtt_evt *evt) {
     case MQTT_EVT_CONNACK:
         LOG_INF("Cliente MQTT conectado!");
         mqtt_subscribe(&client, &sub_list);
+        mqtt_publish(&client, &pub_param);
         break;
 
     case MQTT_EVT_DISCONNECT:
@@ -68,21 +69,14 @@ void mqtt_evt_handler(struct mqtt_client *const c, const struct mqtt_evt *evt) {
                 arm_mode_on = true;
                 pwm_set_pulse_dt(&servo1, SERVO1_OPEN_US);
                 item_grabbed = false;
+                mqtt_publish(&client, &publish_open);
             }
             else if (strcmp(payload_buf, "OFF") == 0) {
                 LOG_INF("Comando OFF recebido(Fechando comedor)");
                 arm_mode_on = false;
                 pwm_set_pulse_dt(&servo1, SERVO1_CLOSE_US);
-            }
-            else if (strcmp(payload_buf, "GET") == 0 && arm_mode_on) {
-                LOG_INF("Comando GET recebido - Pegando objeto");
-		        k_msleep(2000);
-                pwm_set_pulse_dt(&servo1, SERVO1_CLOSE_US);
-
-                k_msleep(1000);
-                item_grabbed = true;
-
-            } else {
+                mqtt_publish(&client, &publish_off);
+            }else {
                 LOG_WRN("Comando desconhecido: %s", payload_buf);
             }
 
@@ -149,7 +143,8 @@ void mqtt_init_and_connect(void) {
         return;
     }
     
-    LOG_INF("MQTT_connect() OK, aguardando CONNACK…");
+    LOG_INF("MQTT_connect() OK enviando resposta via MQTT, aguardando CONNACK…");
+    
 }
 
 static void wifi_mgmt_event_handler(struct net_mgmt_event_callback *cb, uint64_t mgmt_event, struct net_if *iface) {
@@ -210,6 +205,5 @@ int main(void) {
             LOG_DBG("Waiting for events...");
         }
         k_msleep(1000);
-        mqtt_publish(&client, &pub_param);
     }
 }
