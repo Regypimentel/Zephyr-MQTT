@@ -6,30 +6,26 @@
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/mqtt.h>
 #include <zephyr/drivers/pwm.h>
+#include <zephyr/sys/atomic.h>
 #include <string.h>
 #include <stdio.h>
+
+/******************MY INCLUDES**********************/
 #include "driver.h"
 #include "defines.h"
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 
-#define STEP            PWM_USEC(50)
-#define SERVO1 DT_ALIAS(servo1)
-static const struct pwm_dt_spec servo1 =    PWM_DT_SPEC_GET(SERVO1);
-static const uint32_t close_position =      DT_PROP(SERVO1, min_pulse);
-static const uint32_t open_position =       DT_PROP(SERVO1, max_pulse);
-
-
 static struct mqtt_client client;
 static struct sockaddr_storage broker;
+static struct net_mgmt_event_callback wifi_mgmt_cb;
 static bool wifi_connected = false;
 static uint8_t rx_buffer[256];
 static uint8_t tx_buffer[256];
-static struct net_mgmt_event_callback wifi_mgmt_cb;
 uint32_t last_position = close_position;
 
 
-int move_servo_smoothly(const struct pwm_dt_spec *servo, uint64_t from_us, uint32_t to_us, int steps, int delay_ms) {
+int move_servo_smoothly(const struct pwm_dt_spec *servo, uint32_t from_us, uint32_t to_us, int steps, int delay_ms) {
     if (from_us == to_us) return to_us;
     int32_t delta = (int32_t)(to_us - from_us);
     int32_t step_size = delta / steps;
@@ -176,7 +172,11 @@ static void wifi_mgmt_event_handler(struct net_mgmt_event_callback *cb, uint64_t
     break;
     case NET_EVENT_WIFI_DISCONNECT_RESULT:
         wifi_connected = false;
-        LOG_INF("Wi-Fi disconnected, status: %d", status->status);
+        LOG_INF("Wi-Fi não conectado, status: %d", status->status);
+        LOG_INF("Tentando reconectar ao Wi-Fi em 5 segundos...");
+        k_msleep(5000);
+        net_mgmt(NET_REQUEST_WIFI_CONNECT, iface, &cnx_params, sizeof(cnx_params));
+        
     break;
     default:
         LOG_WRN("Wi-Fi evento desconhecido: %d", status->status);
@@ -195,17 +195,9 @@ int main(void) {
     LOG_INF("PWM devices initialized successfully.");
 
     pwm_set_pulse_dt(&servo1, close_position);  
-    // last_position = move_servo_smoothly(&servo1, close_position, close_position, 50, 20);
 
     struct net_if *iface = net_if_get_default();
-    struct wifi_connect_req_params cnx_params = {
-        .ssid = WIFI_SSID,
-        .ssid_length = sizeof(WIFI_SSID),
-        .psk = WIFI_PASSWORD,
-        .psk_length = sizeof(WIFI_PASSWORD),
-        .channel = WIFI_CHANNEL_ANY,
-        .security = WIFI_SECURITY_TYPE_PSK,
-    };
+
 
     LOG_INF("Connecting to Wi-Fi SSID: %s", WIFI_SSID);
 
@@ -218,8 +210,7 @@ int main(void) {
         if (wifi_connected) {
             mqtt_input(&client);
             mqtt_live(&client);
-            LOG_DBG("Waiting for events...");
         }
-        k_msleep(200);
+        k_msleep(100);
     }
 }

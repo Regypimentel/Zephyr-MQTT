@@ -6,6 +6,20 @@
 #include <zephyr/net/socket.h> 
 #include "defines.h"
 
+#define SERVO1 DT_ALIAS(servo1)
+static const struct pwm_dt_spec servo1 =    PWM_DT_SPEC_GET(SERVO1);
+static const uint32_t close_position =      DT_PROP(SERVO1, min_pulse);
+static const uint32_t open_position =       DT_PROP(SERVO1, max_pulse);
+
+struct wifi_connect_req_params cnx_params = {
+    .ssid = WIFI_SSID,
+    .ssid_length = strlen(WIFI_SSID),
+    .psk = WIFI_PASSWORD,
+    .psk_length = strlen(WIFI_PASSWORD),
+    .channel = WIFI_CHANNEL_ANY,
+    .security = WIFI_SECURITY_TYPE_PSK,
+};
+
 
 const struct mqtt_topic subscribe_topic = {
     .topic = {
@@ -43,18 +57,6 @@ const struct mqtt_publish_param pub_param = {
     .retain_flag = 0
 };
 
-const struct mqtt_publish_param publish_open = {
-    .message = {
-        .topic = publish_topic,
-        .payload = {
-            .data = (uint8_t *)MQTT_USER_COMEDOR_ON,
-            .len = strlen(MQTT_USER_COMEDOR_ON)
-        }
-    },
-    .message_id = 1,
-    .dup_flag = 0,
-    .retain_flag = 0    
-};
 const struct mqtt_publish_param publish_opening = {
     .message = {
         .topic = publish_topic,
@@ -68,12 +70,38 @@ const struct mqtt_publish_param publish_opening = {
     .retain_flag = 0    
 };
 
-const struct mqtt_publish_param publish_off = {
+const struct mqtt_publish_param publish_open = {
     .message = {
         .topic = publish_topic,
         .payload = {
-            .data = (uint8_t *)MQTT_USER_COMEDOR_OFF,
-            .len = strlen(MQTT_USER_COMEDOR_OFF)
+            .data = (uint8_t *)MQTT_USER_COMEDOR_OPEN,
+            .len = strlen(MQTT_USER_COMEDOR_OPEN)
+        }
+    },
+    .message_id = 1,
+    .dup_flag = 0,
+    .retain_flag = 0    
+};
+
+const struct mqtt_publish_param publish_closing = {
+    .message = {
+        .topic = publish_topic,
+        .payload = {
+            .data = (uint8_t *)MQTT_USER_COMEDOR_CLOSING,
+            .len = strlen(MQTT_USER_COMEDOR_CLOSING)
+        }
+    },
+    .message_id = 1,
+    .dup_flag = 0,
+    .retain_flag = 0    
+};
+
+const struct mqtt_publish_param publish_close = {
+    .message = {
+        .topic = publish_topic,
+        .payload = {
+            .data = (uint8_t *)MQTT_USER_COMEDOR_CLOSE,
+            .len = strlen(MQTT_USER_COMEDOR_CLOSE)
         }
     },
     .message_id = 1,
@@ -83,7 +111,7 @@ const struct mqtt_publish_param publish_off = {
 
 void mqtt_init_and_connect(void);
 
-int move_servo_smoothly(const struct pwm_dt_spec *servo, uint64_t from_us, uint32_t to_us, int steps, int delay_ms);
+int move_servo_smoothly(const struct pwm_dt_spec *servo, uint32_t from_us, uint32_t to_us, int steps, int delay_ms);
 
 void mqtt_evt_handler(struct mqtt_client *const c, const struct mqtt_evt *evt);
 
