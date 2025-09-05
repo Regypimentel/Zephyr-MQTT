@@ -1,16 +1,17 @@
 /**********************WIFI PARAMS**************************/
-#define WIFI_SSID           "LSE"
-#define WIFI_PASSWORD       "HubLS3s2"
+#define WIFI_SSID           "Maria e Leon"
+#define WIFI_PASSWORD       "zeusmomo2"
 
 /******************MQTT PARAMS AND DEFINES*********************/
-#define MQTT_KEEPALIVE          60
-#define MQTT_BROKER_IP          "131.255.83.223"    //"mqtt://lse.dev.br" //"192.168.45.197"
-#define MQTT_BROKER_PORT        1883
-#define MQTT_CLIENT_ID          "zephyr_client"
-#define MQTT_USER_CONECTED      "Cliente Conectado"
-#define MQTT_USER_DISCONNECTED  "Cliente Desconectado"
-#define MQTT_USER_COMEDOR_ON    "Comedor Aberto"
-#define MQTT_USER_COMEDOR_OFF   "Comedor Fechado"
+#define MQTT_KEEPALIVE              60
+#define MQTT_BROKER_IP              "131.255.83.223"    //"mqtt://lse.dev.br" //"192.168.45.197"
+#define MQTT_BROKER_PORT            1883
+#define MQTT_CLIENT_ID              "zephyr_client"
+#define MQTT_USER_CONECTED          "Cliente Conectado"
+#define MQTT_USER_DISCONNECTED      "Cliente Desconectado"
+#define MQTT_USER_COMEDOR_OPENING   "Abrindo Comedor"
+#define MQTT_USER_COMEDOR_ON        "Comedor Aberto"
+#define MQTT_USER_COMEDOR_OFF       "Comedor Fechado"
 
 
 /************************SERVO MOTOR***************************/

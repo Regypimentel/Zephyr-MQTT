@@ -13,8 +13,12 @@
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 
+#define STEP            PWM_USEC(50)
 #define SERVO1 DT_ALIAS(servo1)
-static const struct pwm_dt_spec servo1 = PWM_DT_SPEC_GET(SERVO1);
+static const struct pwm_dt_spec servo1 =    PWM_DT_SPEC_GET(SERVO1);
+static const uint32_t close_position =      DT_PROP(SERVO1, min_pulse);
+static const uint32_t open_position =       DT_PROP(SERVO1, max_pulse);
+
 
 static struct mqtt_client client;
 static struct sockaddr_storage broker;
@@ -22,11 +26,11 @@ static bool wifi_connected = false;
 static uint8_t rx_buffer[256];
 static uint8_t tx_buffer[256];
 static struct net_mgmt_event_callback wifi_mgmt_cb;
-static bool arm_mode_on = false; 
-static bool item_grabbed = false; 
+uint32_t last_position = close_position;
 
-void move_servo_smoothly(const struct pwm_dt_spec *servo, uint64_t from_us, uint64_t to_us, int steps, int delay_ms) {
-    if (from_us == to_us) return;
+
+int move_servo_smoothly(const struct pwm_dt_spec *servo, uint64_t from_us, uint32_t to_us, int steps, int delay_ms) {
+    if (from_us == to_us) return to_us;
     int32_t delta = (int32_t)(to_us - from_us);
     int32_t step_size = delta / steps;
     int32_t current = from_us;
@@ -37,6 +41,7 @@ void move_servo_smoothly(const struct pwm_dt_spec *servo, uint64_t from_us, uint
         k_msleep(delay_ms);
     }
     pwm_set_pulse_dt(servo, to_us);
+    return to_us;
 }
 
 void mqtt_evt_handler(struct mqtt_client *const c, const struct mqtt_evt *evt) {
@@ -57,25 +62,36 @@ void mqtt_evt_handler(struct mqtt_client *const c, const struct mqtt_evt *evt) {
 
     case MQTT_EVT_PUBLISH: {
         const struct mqtt_publish_param *p = &evt->param.publish;
-        uint8_t payload_buf[256];
+        uint8_t payload_buf[512];
         int len = mqtt_read_publish_payload(c, payload_buf, sizeof(payload_buf));
 
         if (len > 0) {
             payload_buf[len] = '\0';
             LOG_INF("Mensagem recebida: %s", payload_buf);
 
-            if (strcmp(payload_buf, "ON") == 0) {
-                LOG_INF("Comando ON recebido(Abrindo comedor)");
-                arm_mode_on = true;
-                pwm_set_pulse_dt(&servo1, SERVO1_OPEN_US);
-                item_grabbed = false;
-                mqtt_publish(&client, &publish_open);
+            if (strcmp(payload_buf, "OPEN") == 0) {
+                if (last_position == close_position)
+                {
+                    LOG_INF("Comando ON recebido(Abrindo comedor)");
+                    last_position = move_servo_smoothly(&servo1, close_position, open_position, 50, 20);
+                    mqtt_publish(&client, &publish_opening);
+                }else if(last_position == open_position)
+                {
+                    LOG_INF("Comedor já está aberto, aguardando comando CLOSE");
+                    mqtt_publish(&client, &publish_open);
+                }               
             }
-            else if (strcmp(payload_buf, "OFF") == 0) {
+            else if (strcmp(payload_buf, "CLOSE") == 0) {
                 LOG_INF("Comando OFF recebido(Fechando comedor)");
-                arm_mode_on = false;
-                pwm_set_pulse_dt(&servo1, SERVO1_CLOSE_US);
-                mqtt_publish(&client, &publish_off);
+                if (last_position == open_position)
+                {
+                    mqtt_publish(&client, &publish_opening);
+                    last_position = move_servo_smoothly(&servo1, open_position, close_position, 50, 20);
+                }else if(last_position == close_position)
+                {
+                    LOG_INF("Comedor já está fechado, aguardando comando OPEN");
+                    
+                }
             }else {
                 LOG_WRN("Comando desconhecido: %s", payload_buf);
             }
@@ -143,8 +159,7 @@ void mqtt_init_and_connect(void) {
         return;
     }
     
-    LOG_INF("MQTT_connect() OK enviando resposta via MQTT, aguardando CONNACK…");
-    
+    LOG_INF("MQTT_connect() OK enviando resposta via MQTT, aguardando CONNACK…");    
 }
 
 static void wifi_mgmt_event_handler(struct net_mgmt_event_callback *cb, uint64_t mgmt_event, struct net_if *iface) {
@@ -179,7 +194,8 @@ int main(void) {
     }
     LOG_INF("PWM devices initialized successfully.");
 
-    pwm_set_pulse_dt(&servo1, SERVO1_CLOSE_US);  
+    pwm_set_pulse_dt(&servo1, close_position);  
+    // last_position = move_servo_smoothly(&servo1, close_position, close_position, 50, 20);
 
     struct net_if *iface = net_if_get_default();
     struct wifi_connect_req_params cnx_params = {
@@ -204,6 +220,6 @@ int main(void) {
             mqtt_live(&client);
             LOG_DBG("Waiting for events...");
         }
-        k_msleep(1000);
+        k_msleep(200);
     }
 }

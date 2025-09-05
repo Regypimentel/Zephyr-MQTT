@@ -55,6 +55,18 @@ const struct mqtt_publish_param publish_open = {
     .dup_flag = 0,
     .retain_flag = 0    
 };
+const struct mqtt_publish_param publish_opening = {
+    .message = {
+        .topic = publish_topic,
+        .payload = {
+            .data = (uint8_t *)MQTT_USER_COMEDOR_OPENING,
+            .len = strlen(MQTT_USER_COMEDOR_OPENING)
+        }
+    },
+    .message_id = 1,
+    .dup_flag = 0,
+    .retain_flag = 0    
+};
 
 const struct mqtt_publish_param publish_off = {
     .message = {
@@ -71,7 +83,7 @@ const struct mqtt_publish_param publish_off = {
 
 void mqtt_init_and_connect(void);
 
-void move_servo_smoothly(const struct pwm_dt_spec *servo, uint64_t from_us, uint64_t to_us, int steps, int delay_ms);
+int move_servo_smoothly(const struct pwm_dt_spec *servo, uint64_t from_us, uint32_t to_us, int steps, int delay_ms);
 
 void mqtt_evt_handler(struct mqtt_client *const c, const struct mqtt_evt *evt);
 

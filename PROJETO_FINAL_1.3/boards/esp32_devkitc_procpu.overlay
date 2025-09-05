@@ -5,11 +5,11 @@
         servo1 = &pwm_led_0;
     };
 
-	pwmleds {
-		compatible = "pwm-leds";
-		pwm_led_0: pwm_led_0 {
-			pwms = <&ledc0 0 PWM_HZ(50) PWM_POLARITY_NORMAL>;
-		};
+	pwm_led_0: pwm_led_0 {
+		compatible = "pwm-servo";
+		pwms = <&ledc0 0 PWM_HZ(100) PWM_POLARITY_NORMAL>;
+		min-pulse = <PWM_USEC(1000)>;
+    	max-pulse = <PWM_USEC(2000)>;
 	};
 	
 };
