@@ -81,12 +81,12 @@ void mqtt_evt_handler(struct mqtt_client *const c, const struct mqtt_evt *evt) {
                 LOG_INF("Comando OFF recebido(Fechando comedor)");
                 if (last_position == open_position)
                 {
-                    mqtt_publish(&client, &publish_opening);
+                    mqtt_publish(&client, &publish_closing);
                     last_position = move_servo_smoothly(&servo1, open_position, close_position, 50, 20);
                 }else if(last_position == close_position)
                 {
                     LOG_INF("Comedor já está fechado, aguardando comando OPEN");
-                    
+                    mqtt_publish(&client, &publish_close);
                 }
             }else {
                 LOG_WRN("Comando desconhecido: %s", payload_buf);
