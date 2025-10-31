@@ -7,12 +7,15 @@
 #include <zephyr/net/mqtt.h>
 #include <zephyr/drivers/pwm.h>
 #include <zephyr/sys/atomic.h>
+#include <time.h>  
 #include <string.h>
 #include <stdio.h>
 
 /******************MY INCLUDES**********************/
 #include "driver.h"
 #include "defines.h"
+#include "get_times.h"
+/***************************************************/
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 
@@ -20,9 +23,11 @@ static struct mqtt_client client;
 static struct sockaddr_storage broker;
 static struct net_mgmt_event_callback wifi_mgmt_cb;
 static bool wifi_connected = false;
+static bool mqqt_client_service = false;
 static uint8_t rx_buffer[256];
 static uint8_t tx_buffer[256];
 uint32_t last_position = close_position;
+char timedate_buffer[22];
 
 
 int move_servo_smoothly(const struct pwm_dt_spec *servo, uint32_t from_us, uint32_t to_us, int steps, int delay_ms) {
@@ -51,7 +56,6 @@ void mqtt_evt_handler(struct mqtt_client *const c, const struct mqtt_evt *evt) {
 
     case MQTT_EVT_DISCONNECT:
         LOG_INF("MQTT client disconnected, retrying in 5s");
-        mqtt_disconnect(&client, false);
         k_msleep(5000);
         mqtt_init_and_connect();
         break;
@@ -107,9 +111,9 @@ void mqtt_evt_handler(struct mqtt_client *const c, const struct mqtt_evt *evt) {
     }
 }
 
-void mqtt_init_and_connect(void) {
-    
+int mqtt_init_and_connect(void) {
     int err;
+
     struct zsock_addrinfo hints = {
         .ai_family = AF_INET,
         .ai_socktype = SOCK_STREAM
@@ -120,7 +124,7 @@ void mqtt_init_and_connect(void) {
     if (err != 0 || res == NULL) {
         LOG_ERR("Failed to resolve broker address: %d", err);
         freeaddrinfo(res);
-        return;
+        return ERR_CONNECT_WI_FI;
     }
 
     struct sockaddr_in *addr4 = (struct sockaddr_in *)res->ai_addr;
@@ -131,7 +135,7 @@ void mqtt_init_and_connect(void) {
 
     char ipstr[NET_IPV4_ADDR_LEN];
     inet_ntop(AF_INET, &addr4->sin_addr, ipstr, sizeof(ipstr));
-    LOG_INF("Conectando em %s (%s):%d", MQTT_BROKER_IP, ipstr, MQTT_BROKER_PORT);
+    LOG_INF("Conectando no Broker(%s):%d", MQTT_BROKER_IP, MQTT_BROKER_PORT);
     
     freeaddrinfo(res);
     
@@ -152,10 +156,13 @@ void mqtt_init_and_connect(void) {
     if (err != 0)
     {
         LOG_ERR("Erro na conexão com o mqqt_connect: %d", err);
-        return;
+        mqqt_client_service = true;
+        return ERR_CONNECT_MQTT;
     }
-    
-    LOG_INF("MQTT_connect() OK enviando resposta via MQTT, aguardando CONNACK…");    
+
+    LOG_INF("MQTT OK enviando resposta via MQTT, aguardando CONNACK…"); 
+
+    return OK;
 }
 
 static void wifi_mgmt_event_handler(struct net_mgmt_event_callback *cb, uint64_t mgmt_event, struct net_if *iface) {
@@ -168,6 +175,8 @@ static void wifi_mgmt_event_handler(struct net_mgmt_event_callback *cb, uint64_t
             wifi_connected = true;
             LOG_INF("Wi-Fi connected successfully to SSID: %s", WIFI_SSID);
             mqtt_init_and_connect();
+            k_msleep(1000);
+            initialize_sntp();       
         }
     break;
     case NET_EVENT_WIFI_DISCONNECT_RESULT:
@@ -176,7 +185,6 @@ static void wifi_mgmt_event_handler(struct net_mgmt_event_callback *cb, uint64_t
         LOG_INF("Tentando reconectar ao Wi-Fi em 5 segundos...");
         k_msleep(5000);
         net_mgmt(NET_REQUEST_WIFI_CONNECT, iface, &cnx_params, sizeof(cnx_params));
-        
     break;
     default:
         LOG_WRN("Wi-Fi evento desconhecido: %d", status->status);
@@ -198,7 +206,6 @@ int main(void) {
 
     struct net_if *iface = net_if_get_default();
 
-
     LOG_INF("Connecting to Wi-Fi SSID: %s", WIFI_SSID);
 
     net_mgmt_init_event_callback(&wifi_mgmt_cb, wifi_mgmt_event_handler, NET_EVENT_WIFI_CONNECT_RESULT | NET_EVENT_WIFI_DISCONNECT_RESULT);
@@ -210,7 +217,13 @@ int main(void) {
         if (wifi_connected) {
             mqtt_input(&client);
             mqtt_live(&client);
+            k_msleep(1000);
         }
+        if(mqqt_client_service){
+            k_msleep(1000);
+            mqtt_init_and_connect();
+            mqqt_client_service = false;
+        }        
         k_msleep(100);
     }
 }

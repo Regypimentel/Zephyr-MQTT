@@ -4,3 +4,6 @@ project(PROJETO_FINAL)
 
 target_sources(app PRIVATE src/main.c)
 
+add_subdirectory(src)
+
+target_link_libraries(app PRIVATE cat_comedor_source)
