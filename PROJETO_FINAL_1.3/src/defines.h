@@ -25,9 +25,14 @@
 
 /***********************NTP DEFINES****************************/
 #define NTP_UNIX_EPOCH_OFFSET 2208988800UL
+#define SNTP_MAX_RETRY  5
 
 /***********************THREAD DEFINES**************************/
 #define STACKSIZE                          1024
 #define PRIORITY                            5
+
+/***********************INTERVALOR DE HORAS*********************/
+#define INTERVALO_COMEDOR_HORAS   12
+#define INTERVALO_COMEDOR_SEGUNDOS (INTERVALO_COMEDOR_HORAS * 3600)
 
 

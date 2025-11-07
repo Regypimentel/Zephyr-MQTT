@@ -28,21 +28,27 @@ void ON_OFF_SNTP(bool modo_SNTP){
     SNTP_ligado = modo_SNTP;
 }
 
-int get_timedate(char *timedate_buffer) {
-    struct tm timeinfo;
-    time_t now;
+int get_timedate(char *timedate_buffer, size_t bufsize)
+{
     struct timespec ts;
-    
+    struct tm timeinfo;
+
     clock_gettime(CLOCK_REALTIME, &ts);
-    
-    time(&now);
-    localtime_r(&now, &timeinfo);
-    
-    strftime(timedate_buffer, 21, "%Y-%m-%d %H:%M:%S", &timeinfo);
-    
-    char milisec_p[6];
-    snprintf(milisec_p, sizeof(milisec_p), ".%03luZ", ts.tv_nsec / 1000000);
-    strcat(timedate_buffer, milisec_p);
+
+    ts.tv_sec -= 4 * 3600;
+
+    gmtime_r(&ts.tv_sec, &timeinfo);
+
+    size_t len = strftime(timedate_buffer, bufsize, "%Y-%m-%d %H:%M:%S", &timeinfo);
+    if (len == 0 || len >= bufsize) {
+        return -2; 
+    }
+
+    int n = snprintf(timedate_buffer + len, bufsize - len,
+                     ".%03ld", ts.tv_nsec / 1000000L);
+    if (n < 0 || (size_t)n >= bufsize - len) {
+        return -3;
+    }
 
     if (timeinfo.tm_hour < 12) {
         return -1;
@@ -65,11 +71,20 @@ int initialize_sntp(void) {
         return ERR_INIT_SNT;
     }
 
+    uint64_t sec = (uint64_t)ntp.seconds;
+    uint64_t sec_unix;
+
+    if (sec >= 2208988800ULL) {
+        sec_unix = sec - 2208988800ULL;
+    } else {
+        sec_unix = sec;
+    }
+
     struct timespec tv = {
-        .tv_sec = (time_t)(ntp.seconds - NTP_UNIX_EPOCH_OFFSET),
+        .tv_sec  = (time_t)sec_unix,
         .tv_nsec = (long)((((uint64_t)ntp.fraction) * 1000000000ULL) >> 32),
     };
-    
+
     ret = clock_settime(CLOCK_REALTIME, &tv);
     if (ret < 0) {
         LOG_ERR("clock_settime failed: %d", ret);
@@ -77,23 +92,22 @@ int initialize_sntp(void) {
     }
 
     SNTP_inicializado = true;
+
     LOG_INF("SNTP set time ok");
-    LOG_INF("NTP seconds: %u", (unsigned)ntp.seconds);
+    LOG_INF("seconds(unix): %llu",(unsigned long long)sec_unix);
     return OK_TIME;
 }
 
-// Thread corrigida (se ainda for necessária)
 void get_timedate_thread(void *arg1, void *arg2, void *arg3) {
     char buffer[32];
 
     while (1) {
 
         if (SNTP_ligado && SNTP_inicializado) {
-            get_timedate(buffer);
+            get_timedate(buffer, sizeof(buffer));
             LOG_DBG("Current time: %s", buffer);
-            k_sleep(K_SECONDS(1));       
+            k_sleep(K_SECONDS(1));     
         }
-
         k_msleep(100);
     }
 }

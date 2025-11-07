@@ -116,18 +116,7 @@ const struct mqtt_publish_param publish_close = {
     .retain_flag = 0    
 };
 
-const struct mqtt_publish_param publish_close = {
-    .message = {
-        .topic = publish_topic,
-        .payload = {
-            .data = (uint8_t *)MQTT_USER_COMEDOR_CLOSE,
-            .len = strlen(MQTT_USER_COMEDOR_CLOSE)
-        }
-    },
-    .message_id = 1,
-    .dup_flag = 0,
-    .retain_flag = 0    
-};
+void modo_auto(int arg);
 
 int mqtt_init_and_connect(void);
 

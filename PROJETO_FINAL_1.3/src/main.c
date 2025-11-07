@@ -7,6 +7,7 @@
 #include <zephyr/net/mqtt.h>
 #include <zephyr/drivers/pwm.h>
 #include <zephyr/sys/atomic.h>
+#include <zephyr/sys/reboot.h>
 #include <time.h>  
 #include <string.h>
 #include <stdio.h>
@@ -43,6 +44,24 @@ int move_servo_smoothly(const struct pwm_dt_spec *servo, uint32_t from_us, uint3
     }
     pwm_set_pulse_dt(servo, to_us);
     return to_us;
+}
+
+void esp_reboot(){
+    sys_reboot(SYS_REBOOT_COLD);
+}
+
+void Modo_Auto_ON_OFF(char arg[]){
+
+    // LOG_INF("Print do argumento recebido: %s", arg);
+
+    if(strcmp(arg, "AUTO")==0){
+        LOG_INF("Comedor no modo automatico");
+        ON_OFF_SNTP(true);
+    }
+    if(strcmp(arg, "AUTO_OFF")==0){
+        LOG_INF("Desabilitando o modo automatico");
+        ON_OFF_SNTP(false);
+    }
 }
 
 void mqtt_evt_handler(struct mqtt_client *const c, const struct mqtt_evt *evt) {
@@ -92,7 +111,13 @@ void mqtt_evt_handler(struct mqtt_client *const c, const struct mqtt_evt *evt) {
                     LOG_INF("Comedor já está fechado, aguardando comando OPEN");
                     mqtt_publish(&client, &publish_close);
                 }
-            }else {
+
+            }
+            else if(payload_buf[0] == 'A')
+            {
+                Modo_Auto_ON_OFF(payload_buf);              
+            }
+            else {
                 LOG_WRN("Comando desconhecido: %s", payload_buf);
             }
 
@@ -168,6 +193,7 @@ int mqtt_init_and_connect(void) {
 static void wifi_mgmt_event_handler(struct net_mgmt_event_callback *cb, uint64_t mgmt_event, struct net_if *iface) {
 
     const struct wifi_status *status = cb->info;
+    int err, retry=0;
 
     switch (mgmt_event) {
     case NET_EVENT_WIFI_CONNECT_RESULT:
@@ -176,7 +202,22 @@ static void wifi_mgmt_event_handler(struct net_mgmt_event_callback *cb, uint64_t
             LOG_INF("Wi-Fi connected successfully to SSID: %s", WIFI_SSID);
             mqtt_init_and_connect();
             k_msleep(1000);
-            initialize_sntp();       
+            do{
+                err = initialize_sntp();
+                if( err == OK_TIME)
+                {
+                    break;
+                }
+                LOG_ERR("SNTP ERROR INIT: %d, retry: %d/%d, retry in 5 seconds...", ERR_INIT_SNT, retry+1, SNTP_MAX_RETRY);
+                k_sleep(K_SECONDS(5));
+                retry++;
+            }while(retry < SNTP_MAX_RETRY);
+            
+            if(err != OK_TIME){
+                LOG_ERR("SNTP ERROR INIT: %d, break system, reboot in 1s...", ERR_INIT_SNT);
+                k_sleep(K_SECONDS(1));
+                esp_reboot();
+            }
         }
     break;
     case NET_EVENT_WIFI_DISCONNECT_RESULT:
@@ -223,7 +264,7 @@ int main(void) {
             k_msleep(1000);
             mqtt_init_and_connect();
             mqqt_client_service = false;
-        }        
+        }    
         k_msleep(100);
     }
 }
